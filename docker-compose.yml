@@ -10,3 +10,21 @@ services:
           - "${DB_PORT}:5432"
       volumes:
           - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+          - pgdata:/var/lib/postgresql/data
+    
+    api:
+      build: .                 
+      container_name: ticketing_api
+      ports:
+      - "3000:3000"        
+      environment:
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_NAME=${DB_NAME:-ticketing}
+      - DB_PORT=5432         
+      - DB_HOST=postgres       
+      - API_PORT=3000
+      depends_on:
+      - postgres    
+volumes:
+ pgdata:

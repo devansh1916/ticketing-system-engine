@@ -21,11 +21,11 @@ CREATE TABLE seats (
     row_letter CHAR(1) NOT NULL,
     seat_number INTEGER NOT NULL,
 
-    status TEXT NOT NULL DEFAULT 'Avaialble',
+    status TEXT NOT NULL DEFAULT 'AVAILABLE',
     
     holder_id INTEGER REFERENCES users(id),
 
-    hold_expires_at TIMESTAMP
+    expire_time TIMESTAMP
 );
 
 CREATE INDEX idx_seats_status ON seats(event_id,status);

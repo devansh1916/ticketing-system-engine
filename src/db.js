@@ -1,5 +1,7 @@
-require('dotenv').config();
-const {Pool} =require('pg');
+import 'dotenv/config';
+import pg from 'pg';
+
+const {Pool} = pg;
 
 const pool = new Pool({
   user: process.env.DB_USER,
@@ -26,3 +28,6 @@ async function CheckConnection() {
 }
 
 CheckConnection();
+
+export default { pool };
+export { Client } from 'pg'

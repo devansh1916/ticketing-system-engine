@@ -1,0 +1,20 @@
+config:
+  target: "http://localhost:3000"
+  phases:
+    - duration: 10
+      arrivalRate: 80
+      name: "Safe Baseline"
+      
+    - duration: 40
+      arrivalRate: 80
+      rampTo: 250
+      name: "Latency Cliff Search"
+
+scenarios:
+  - name: "Ticket Buyers"
+    flow:
+      - post:
+          url: "/api/book"
+          json:
+            userId: 99
+            eventId: 1

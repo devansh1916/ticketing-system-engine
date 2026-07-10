@@ -1,5 +1,12 @@
 import 'dotenv/config';
 import pg from 'pg';
+import {createClient} from 'redis';
+
+const redisClient = createClient();
+
+redisClient.on('error', err => console.log("Redis error",error));
+
+await redisClient.connect();
 
 const {Pool} = pg;
 
@@ -29,5 +36,7 @@ async function CheckConnection() {
 
 CheckConnection();
 
-export default { pool };
-export { Client } from 'pg'
+export default { 
+    pool,
+    redisClient,
+ };

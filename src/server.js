@@ -1,6 +1,7 @@
 import express from 'express';
 
-import db, { Client } from './db.js';
+import db from './db.js';
+import { RedisClient } from 'redis';
 db.pool.query('SELECT NOW()');
 
 const app= express();
@@ -16,31 +17,49 @@ app.get('/check',(req,res) => {
 
 app.post('/api/book',async (req,res) => {
     const {userID , eventID} =req.body;
-    const client= await db.pool.connect();
-    try {
-        await client.query('BEGIN');
+    const pgclient= await db.pool.connect();
+    const cacheKey = 'seat:${eventID}:${userID}'
 
+    //Redis Check
+    try {
+        const cacheSeat = await redisClient.hGetAll(cacheKey)
+        if(cacheSeat && Object.keys(cacheSeat).length > 0) {
+            const seat = cacheSeat;
+            console.log("CACHE HIT!")
+            return res.json({
+                message: "Ticket is in cart! (Through Redis)",
+                seat: cacheSeat,
+                instructions:`You have ${10} minutes to complete payment`
+            });
+        }
+    }
+    catch (e) {
+        console.log("Unexpected Redis Error",e)
+    }
+    try {
+        await pgclient.query('BEGIN');
         const findQuery=` 
-            SELECT id, row_letter, seat_number 
-            FROM seats 
-            WHERE event_id=$1
-            AND
-             ( status='AVAILABLE'
-              OR
-              (status='HELD' AND expire_time <=NOW())
-              ) 
-            LIMIT 1 
-            FOR UPDATE SKIP LOCKED
-        `;
-        const { rows } = await client.query(findQuery,[eventID]);
+                SELECT id, row_letter, seat_number 
+                FROM seats 
+                WHERE event_id=$1
+                AND
+                ( status='AVAILABLE'
+                OR
+                (status='HELD' AND expire_time <=NOW())
+                ) 
+                LIMIT 1 
+                FOR UPDATE SKIP LOCKED `;
+        const { rows } = await pgclient.query(findQuery,[eventID])
         if (rows.length === 0) {
-            await client.query('ROLLBACK'); // Pop the bubble
-            return res.status(404).json({ error: "Sorry, this event is sold out!" });
+                await pgclient.query('ROLLBACK')
+                return res.status(404).json({ error: "Sorry, this event is sold out!" })
         }
         const seat=rows[0];
 
-        const holdDuration=10;
-        const expire_time=new Date(Date.now()+holdDuration*60000);
+
+        const holdDuration=10
+        const expire_time=new Date(Date.now()+holdDuration*60000)
+
 
         const upadateQuery=`
         UPDATE seats
@@ -48,9 +67,14 @@ app.post('/api/book',async (req,res) => {
         WHERE id=$3
         RETURNING *
         ` 
-        await client.query(upadateQuery,[userID,expire_time,seat.id]);
+        const { rows : updatedRows} = await pgclient.query(upadateQuery,[userID,expire_time,seat.id]);
+        const finalSeat = updatedRows[0];
         
-        await client.query('COMMIT');
+        await pgclient.query('COMMIT');
+
+        
+        await redisClient.hSet(cacheKey, {...finalSeat,expire_time : finalSeat.expire_time.toISOString()})
+        await redisClient.expire(cacheKey, 600);
 
         res.json({
             message: "Ticket is in cart!",
@@ -66,23 +90,31 @@ app.post('/api/book',async (req,res) => {
         });
     }
     catch(error) {
-        await client.query('ROLLBACK');
+        await pgclient.query('ROLLBACK');
         console.log('Booking error:',error);
         res.status(500).json({ error: "Internal server error during booking." });
     }
     finally {
-        client.release();
+        pgclient.release();
     }
 })
 
-const PORT= process.env.API_PORT || 3000;
+const PORT = process.env.API_PORT || 3000;
+
+process.on('SIGINT', async () => {
+    console.log("Stopping server...");
+
+    await redisClient.quit(); 
+    
+    process.exit(0);
+});
 
 setInterval(async () => {
     try {
         const releaseQuery = `
             UPDATE seats 
-            SET status = 'AVAILABLE', holder_id = NULL, hold_expires_at = NULL 
-            WHERE status = 'HELD' AND hold_expires_at <= NOW()
+            SET status = 'AVAILABLE', holder_id = NULL, expire_time = NULL 
+            WHERE status = 'HELD' AND expire_time <= NOW()
             RETURNING id, row_letter, seat_number;
         `;
         

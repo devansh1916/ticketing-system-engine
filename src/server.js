@@ -1,7 +1,5 @@
 import express from 'express';
-
 import db from './db.js';
-import { RedisClient } from 'redis';
 db.pool.query('SELECT NOW()');
 
 const app= express();
@@ -19,10 +17,11 @@ app.post('/api/book',async (req,res) => {
     const {userID , eventID} =req.body;
     const pgclient= await db.pool.connect();
     const cacheKey = 'seat:${eventID}:${userID}'
+    console.log("Looking for cache key:", cacheKey)
 
     //Redis Check
     try {
-        const cacheSeat = await redisClient.hGetAll(cacheKey)
+        const cacheSeat = await db.redisClient.hGetAll(cacheKey)
         if(cacheSeat && Object.keys(cacheSeat).length > 0) {
             const seat = cacheSeat;
             console.log("CACHE HIT!")
@@ -72,9 +71,9 @@ app.post('/api/book',async (req,res) => {
         
         await pgclient.query('COMMIT');
 
-        
-        await redisClient.hSet(cacheKey, {...finalSeat,expire_time : finalSeat.expire_time.toISOString()})
-        await redisClient.expire(cacheKey, 600);
+        console.log("Looking for cache key:", cacheKey)
+        await db.redisClient.hSet(cacheKey, {...finalSeat,expire_time : finalSeat.expire_time.toISOString()})
+        await db.redisClient.expire(cacheKey, 600);
 
         res.json({
             message: "Ticket is in cart!",
